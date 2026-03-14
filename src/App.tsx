@@ -134,10 +134,12 @@ export default function App() {
   };
 
   // Gọi AI sử dụng Gemini SDK
-  const generateAI = async (studentName: string, level: string, note: string = '') => {
-    const apiKey = process.env.GEMINI_API_KEY;
+  const generateAI = async (studentName: string, level: string, note: string = '', userApiKey: string = '') => {
+    // Ưu tiên key từ người dùng nhập, nếu không có thì lấy từ env
+    const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+    
     if (!apiKey) {
-      throw new Error("Gemini API Key is missing. Please configure it in the secrets panel.");
+      throw new Error("Thiếu API Key. Vui lòng nhập API Key ở ô 'API Configuration' phía trên hoặc thiết lập trong Secrets panel.");
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -184,7 +186,7 @@ export default function App() {
         id: Date.now() + Math.random(), 
         studentName, 
         level, 
-        achievement: "Lỗi kết nối AI. Vui lòng kiểm tra lại.", 
+        achievement: "Lỗi kết nối AI. Vui lòng kiểm tra lại API Key.", 
         limitation: "Không thể tạo nội dung.", 
         parentSupport: "Thử lại sau ít phút." 
       };
@@ -196,9 +198,12 @@ export default function App() {
     let newResults: StudentResult[] = [];
 
     try {
+      // Lấy key đang hoạt động (ưu tiên key đã lưu ở UI)
+      const activeKey = isKeySaved ? apiKeyInput : '';
+
       if (importedData && importedData.length > 0) {
         for (let student of importedData) {
-          const res = await generateAI(student.name, student.level, student.note);
+          const res = await generateAI(student.name, student.level, student.note, activeKey);
           newResults.push(res);
         }
       } else {
@@ -209,7 +214,7 @@ export default function App() {
         }
         const names = studentNames.split('\n').map(n => n.trim()).filter(n => n);
         for (let name of names) {
-          const res = await generateAI(name, manualLevel || "Hoàn thành");
+          const res = await generateAI(name, manualLevel || "Hoàn thành", '', activeKey);
           newResults.push(res);
         }
       }
