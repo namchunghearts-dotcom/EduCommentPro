@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Moon, Sun, User, Medal, Lightbulb, Users, UploadCloud, 
   FileText, CheckCircle, MessageSquare, Copy, Eye, Download, Info, Save, Trash2, X,
-  TableProperties, Loader2
+  TableProperties, Loader2, RotateCcw
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
@@ -165,20 +165,29 @@ export default function App() {
     }
 
     const noteInstruction = note ? `\nGHI CHÚ ĐẶC BIỆT TỪ GIÁO VIÊN: "${note}". Hãy lồng ghép ý này vào nhận xét.` : '';
+    
+    // Tinh chỉnh prompt để bám sát mức độ và xưng hô
     const promptText = `
       Bạn là chuyên gia giáo dục tiểu học tại Việt Nam. Hãy viết nhận xét đánh giá cuối kỳ bám sát THÔNG TƯ 27/2020/TT-BGDĐT.
-      Học sinh: ${studentName}. Khối: ${grade}. Môn: ${subject}.
+      Môn: ${subject}. Khối: ${grade}.
       Yêu cầu cần đạt (YCCĐ): ${yccd || 'Hoàn thành chương trình môn học'}.
-      Mức độ đạt được: ${level}.
+      Mức độ đạt được của học sinh: ${level}.
       ${noteInstruction}
 
-      YÊU CẦU NỘI DUNG THEO THÔNG TƯ 27:
-      1. Thành tích: Nhận xét sự hình thành và phát triển năng lực, phẩm chất. Nêu rõ những ưu điểm nổi bật, sự tiến bộ so với YCCĐ của môn học.
-      2. Hạn chế: Chỉ ra những nội dung chưa hoàn thành hoặc kỹ năng còn yếu một cách khéo léo, sư phạm. Đưa ra biện pháp giúp đỡ cụ thể.
-      3. Lời khuyên: Hướng dẫn phụ huynh cách phối hợp rèn luyện thêm tại nhà.
+      QUY TẮC XƯNG HÔ & NỘI DUNG:
+      1. XƯNG HÔ: Chỉ sử dụng đại từ "Em" để gọi học sinh. TUYỆT ĐỐI KHÔNG ghi đầy đủ họ tên học sinh trong nội dung nhận xét.
+      2. PHÂN BIỆT MỨC ĐỘ (RẤT QUAN TRỌNG):
+         - Nếu mức độ là "Hoàn thành tốt": Sử dụng các từ ngữ khen ngợi như "tốt", "xuất sắc", "thông minh", "nổi bật".
+         - Nếu mức độ là "Hoàn thành": Chỉ nhận xét là em đã đạt được YCCĐ, nắm vững kiến thức cơ bản. TUYỆT ĐỐI KHÔNG dùng từ "tốt", "giỏi" hay "xuất sắc". Hãy dùng các từ như "đạt yêu cầu", "có cố gắng", "nắm được bài".
+         - Nếu mức độ là "Chưa hoàn thành": Tập trung vào việc em cần cố gắng hơn, chỉ ra các lỗ hổng kiến thức một cách nhẹ nhàng nhưng rõ ràng. TUYỆT ĐỐI KHÔNG dùng từ ngữ tích cực quá mức.
+      3. CẤU TRÚC TRẢ VỀ: JSON với 3 trường: "achievement", "limitation", "parentSupport".
 
-      TRẢ VỀ JSON (không có markdown block) với 3 trường: "achievement", "limitation", "parentSupport". 
-      Ngôn ngữ: Tiếng Việt, trang trọng, khích lệ.
+      YÊU CẦU CHI TIẾT THEO THÔNG TƯ 27:
+      - Thành tích: Nhận xét sự hình thành năng lực, phẩm chất dựa trên YCCĐ.
+      - Hạn chế: Chỉ ra nội dung chưa đạt hoặc cần rèn luyện thêm.
+      - Lời khuyên: Hướng dẫn phụ huynh phối hợp.
+
+      Ngôn ngữ: Tiếng Việt, sư phạm, chuẩn xác theo mức độ.
     `;
 
     // Hàm gọi Gemini
@@ -287,6 +296,24 @@ export default function App() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
+
+  const handleRefresh = async (result: StudentResult) => {
+    setRefreshingId(result.id);
+    try {
+      const activeKey = isKeySaved ? apiKeyInput : '';
+      // Tìm note gốc nếu có từ importedData
+      const originalNote = importedData?.find(s => s.name === result.studentName)?.note || '';
+      const newRes = await generateAI(result.studentName, result.level, originalNote, activeKey);
+      
+      setResults(prev => prev.map(r => r.id === result.id ? { ...newRes, id: result.id } : r));
+    } catch (error) {
+      alert("Không thể làm mới nhận xét: " + (error instanceof Error ? error.message : "Lỗi không xác định"));
+    } finally {
+      setRefreshingId(null);
+    }
   };
 
   const exportExcel = () => {
@@ -647,15 +674,26 @@ export default function App() {
                             {res.level}
                           </span>
                         </div>
-                        <button 
-                          onClick={() => copyToClipboard(
-                            activeTab === 'achievement' ? res.achievement : 
-                            activeTab === 'limitation' ? res.limitation : res.parentSupport
-                          )}
-                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-blue-500 transition-all"
-                        >
-                          <Copy size={18}/>
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={() => handleRefresh(res)}
+                            disabled={refreshingId === res.id}
+                            className={`p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-emerald-500 transition-all ${refreshingId === res.id ? 'animate-spin text-emerald-500' : ''}`}
+                            title="Làm mới nhận xét"
+                          >
+                            <RotateCcw size={18}/>
+                          </button>
+                          <button 
+                            onClick={() => copyToClipboard(
+                              activeTab === 'achievement' ? res.achievement : 
+                              activeTab === 'limitation' ? res.limitation : res.parentSupport
+                            )}
+                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-blue-500 transition-all"
+                            title="Sao chép"
+                          >
+                            <Copy size={18}/>
+                          </button>
+                        </div>
                       </div>
                       <p className="text-lg leading-relaxed">
                         {activeTab === 'achievement' ? res.achievement : 
