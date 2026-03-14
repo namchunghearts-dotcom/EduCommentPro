@@ -174,13 +174,14 @@ export default function App() {
       Mức độ đạt được của học sinh: ${level}.
       ${noteInstruction}
 
-      QUY TẮC XƯNG HÔ & NỘI DUNG:
-      1. XƯNG HÔ: Chỉ sử dụng đại từ "Em" để gọi học sinh. TUYỆT ĐỐI KHÔNG ghi đầy đủ họ tên học sinh trong nội dung nhận xét.
-      2. PHÂN BIỆT MỨC ĐỘ (RẤT QUAN TRỌNG):
+      QUY TẮC XƯNG HÔ & NỘI DUNG (TUYỆT ĐỐI TUÂN THỦ):
+      1. XƯNG HÔ: Chỉ sử dụng đại từ "Em" để gọi học sinh. 
+      2. KHÔNG DÙNG TÊN: TUYỆT ĐỐI KHÔNG ghi tên học sinh (ví dụ: "Nguyễn Văn A", "An", "Bình",...) trong nội dung nhận xét. Thay tất cả bằng "Em".
+      3. PHÂN BIỆT MỨC ĐỘ:
          - Nếu mức độ là "Hoàn thành tốt": Sử dụng các từ ngữ khen ngợi như "tốt", "xuất sắc", "thông minh", "nổi bật".
          - Nếu mức độ là "Hoàn thành": Chỉ nhận xét là em đã đạt được YCCĐ, nắm vững kiến thức cơ bản. TUYỆT ĐỐI KHÔNG dùng từ "tốt", "giỏi" hay "xuất sắc". Hãy dùng các từ như "đạt yêu cầu", "có cố gắng", "nắm được bài".
          - Nếu mức độ là "Chưa hoàn thành": Tập trung vào việc em cần cố gắng hơn, chỉ ra các lỗ hổng kiến thức một cách nhẹ nhàng nhưng rõ ràng. TUYỆT ĐỐI KHÔNG dùng từ ngữ tích cực quá mức.
-      3. CẤU TRÚC TRẢ VỀ: JSON với 3 trường: "achievement", "limitation", "parentSupport".
+      4. CẤU TRÚC TRẢ VỀ: JSON với 3 trường: "achievement", "limitation", "parentSupport".
 
       YÊU CẦU CHI TIẾT THEO THÔNG TƯ 27:
       - Thành tích: Nhận xét sự hình thành năng lực, phẩm chất dựa trên YCCĐ.
@@ -234,13 +235,31 @@ export default function App() {
         }
       }
 
+      // Hậu xử lý: Đảm bảo không có tên học sinh trong nhận xét
+      const cleanText = (text: string) => {
+        if (!text) return "";
+        let cleaned = text;
+        // Thay thế tên học sinh (nếu AI lỡ ghi vào) bằng "Em"
+        const nameParts = studentName.split(' ').filter(p => p.length > 0);
+        nameParts.forEach(part => {
+          const regex = new RegExp(`\\b${part}\\b`, 'gi');
+          cleaned = cleaned.replace(regex, 'Em');
+        });
+        // Thay thế các cụm từ xưng hô đầy đủ nếu có
+        cleaned = cleaned.replace(new RegExp(studentName, 'gi'), 'Em');
+        // Viết hoa chữ cái đầu nếu cần
+        cleaned = cleaned.replace(/Em em/g, 'Em');
+        cleaned = cleaned.trim();
+        return cleaned;
+      };
+
       return { 
         id: Date.now() + Math.random(), 
         studentName, 
         level, 
-        achievement: parsed.achievement || "Chưa có nội dung thành tích.", 
-        limitation: parsed.limitation || "Chưa có nội dung hạn chế.", 
-        parentSupport: parsed.parentSupport || "Chưa có lời khuyên phụ huynh." 
+        achievement: cleanText(parsed.achievement) || "Chưa có nội dung thành tích.", 
+        limitation: cleanText(parsed.limitation) || "Chưa có nội dung hạn chế.", 
+        parentSupport: cleanText(parsed.parentSupport) || "Chưa có lời khuyên phụ huynh." 
       };
     } catch (e: any) {
       console.error("API Error:", e);
@@ -318,16 +337,17 @@ export default function App() {
 
   const exportExcel = () => {
     if (results.length === 0) return;
-    let csvContent = '\uFEFFHọ và tên;Mức độ;Thành tích;Hạn chế;Nhắn phụ huynh\n';
-    results.forEach(r => {
-      const esc = (str: string) => `"${(str || '').replace(/"/g, '""')}"`;
-      csvContent += `${esc(r.studentName)};${esc(r.level)};${esc(r.achievement)};${esc(r.limitation)};${esc(r.parentSupport)}\n`;
+    // Header với đầy đủ các cột
+    let csvContent = '\uFEFFSTT;Họ và tên;Mức độ;Thành tích;Hạn chế;Lời khuyên phụ huynh\n';
+    results.forEach((r, index) => {
+      const esc = (str: string) => `"${(str || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+      csvContent += `${index + 1};${esc(r.studentName)};${esc(r.level)};${esc(r.achievement)};${esc(r.limitation)};${esc(r.parentSupport)}\n`;
     });
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "Ket_Qua_Nhan_Xet.csv";
+    link.download = `Danh_Sach_Nhan_Xet_${subject}_${grade}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -448,13 +468,38 @@ export default function App() {
                   </button>
                 </div>
                 {showKeyGuide && (
-                  <div className={`mt-4 p-4 rounded-xl text-xs leading-relaxed ${darkMode ? 'bg-slate-900 text-slate-400' : 'bg-blue-50 text-blue-800'}`}>
-                    <p className="font-bold mb-2">💡 Hỗ trợ đa nền tảng:</p>
-                    <ul className="list-disc ml-4 space-y-1">
-                      <li>Hệ thống ưu tiên sử dụng <b>Gemini API</b> (Model: Gemini 3 Flash).</li>
-                      <li>Nếu Gemini gặp lỗi hoặc bạn nhập <b>Groq Key</b> (bắt đầu bằng <code>gsk_</code>), hệ thống sẽ tự động chuyển sang Groq (Model: Llama 3.3 70B).</li>
-                      <li>Key của bạn được bảo mật và chỉ lưu trữ cục bộ trên trình duyệt này.</li>
-                    </ul>
+                  <div className={`mt-4 p-5 rounded-2xl text-xs leading-relaxed border ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-blue-50 border-blue-100 text-blue-900'}`}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="font-bold mb-3 flex items-center gap-2 text-sm">
+                          <span className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-[10px]">1</span>
+                          Cách lấy Groq API Key (Khuyên dùng - Rất nhanh):
+                        </p>
+                        <ol className="list-decimal ml-5 space-y-2">
+                          <li>Truy cập: <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-blue-500 underline font-bold">console.groq.com/keys</a></li>
+                          <li>Đăng nhập bằng tài khoản Google của bạn.</li>
+                          <li>Nhấn nút <b>"Create API Key"</b>.</li>
+                          <li>Đặt tên (ví dụ: "EduComment") và nhấn <b>"Submit"</b>.</li>
+                          <li>Sao chép mã bắt đầu bằng <code>gsk_...</code> và dán vào ô nhập liệu phía trên.</li>
+                        </ol>
+                      </div>
+                      <div>
+                        <p className="font-bold mb-3 flex items-center gap-2 text-sm">
+                          <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px]">2</span>
+                          Cách lấy Gemini API Key:
+                        </p>
+                        <ol className="list-decimal ml-5 space-y-2">
+                          <li>Truy cập: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 underline font-bold">aistudio.google.com</a></li>
+                          <li>Đăng nhập tài khoản Google.</li>
+                          <li>Nhấn <b>"Create API key"</b>.</li>
+                          <li>Chọn dự án và nhấn <b>"Create API key in existing project"</b>.</li>
+                          <li>Sao chép mã bắt đầu bằng <code>AIza...</code> và dán vào ô nhập liệu.</li>
+                        </ol>
+                      </div>
+                    </div>
+                    <div className={`mt-4 pt-4 border-t ${darkMode ? 'border-slate-800' : 'border-blue-100'} italic`}>
+                      * Lưu ý: Hệ thống sẽ tự động nhận diện loại Key bạn nhập. Groq thường cho tốc độ phản hồi nhanh hơn và ít bị giới hạn hơn đối với người dùng Việt Nam.
+                    </div>
                   </div>
                 )}
               </div>
@@ -646,6 +691,18 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      if (window.confirm("Bạn có chắc chắn muốn làm mới toàn bộ nhận xét?")) {
+                        results.forEach(res => handleRefresh(res));
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-xl transition-all font-medium text-sm"
+                    title="Làm mới tất cả"
+                  >
+                    <RotateCcw size={16} className={refreshingId !== null ? 'animate-spin' : ''} />
+                    Làm mới tất cả
+                  </button>
                   <button onClick={() => setShowPreviewModal(true)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
                     <Eye size={20} />
                   </button>
@@ -678,10 +735,11 @@ export default function App() {
                           <button 
                             onClick={() => handleRefresh(res)}
                             disabled={refreshingId === res.id}
-                            className={`p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-emerald-500 transition-all ${refreshingId === res.id ? 'animate-spin text-emerald-500' : ''}`}
-                            title="Làm mới nhận xét"
+                            className={`flex items-center gap-1 px-3 py-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg text-slate-400 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-200 dark:hover:border-emerald-800 ${refreshingId === res.id ? 'text-emerald-500' : ''}`}
+                            title="Làm mới nhận xét này"
                           >
-                            <RotateCcw size={18}/>
+                            <RotateCcw size={16} className={refreshingId === res.id ? 'animate-spin' : ''}/>
+                            <span className="text-xs font-medium">Làm mới</span>
                           </button>
                           <button 
                             onClick={() => copyToClipboard(
@@ -719,9 +777,10 @@ export default function App() {
                 </button>
                 <button 
                   onClick={exportExcel}
-                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all"
+                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
                 >
-                  Xuất Excel (.csv)
+                  <Download size={20} />
+                  Tải xuống danh sách đầy đủ
                 </button>
               </div>
             </div>
