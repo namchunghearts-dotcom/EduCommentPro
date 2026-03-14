@@ -10,6 +10,7 @@ import {
   TableProperties, Loader2
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 
 const GRADES = ["Lớp 1", "Lớp 2", "Lớp 3", "Lớp 4", "Lớp 5"];
 const SUBJECTS = [
@@ -155,23 +156,15 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Gọi AI sử dụng Gemini SDK
+  // Gọi AI sử dụng Gemini hoặc Groq làm fallback
   const generateAI = async (studentName: string, level: string, note: string = '', userApiKey: string = '') => {
-    // Ưu tiên key từ người dùng nhập, nếu không có thì lấy từ env
-    const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+    const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY;
     
     if (!apiKey) {
-      throw new Error("Thiếu API Key. Vui lòng nhập API Key ở ô 'API Configuration' phía trên hoặc thiết lập trong Secrets panel.");
+      throw new Error("Hệ thống chưa sẵn sàng. Vui lòng nhập API Key (Gemini hoặc Groq) ở ô 'API Configuration' hoặc kiểm tra lại Secrets panel.");
     }
 
-    // Kiểm tra nhanh định dạng key để cảnh báo người dùng
-    if (apiKey.startsWith('gsk_')) {
-      throw new Error("Có vẻ bạn đang nhập Groq API Key. Ứng dụng này hiện đang sử dụng Gemini SDK, vui lòng nhập Gemini API Key (bắt đầu bằng 'AIza...').");
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
     const noteInstruction = note ? `\nGHI CHÚ ĐẶC BIỆT TỪ GIÁO VIÊN: "${note}". Hãy lồng ghép ý này vào nhận xét.` : '';
-
     const promptText = `
       Bạn là chuyên gia giáo dục tiểu học tại Việt Nam. Hãy viết nhận xét đánh giá cuối kỳ bám sát THÔNG TƯ 27/2020/TT-BGDĐT.
       Học sinh: ${studentName}. Khối: ${grade}. Môn: ${subject}.
@@ -188,21 +181,50 @@ export default function App() {
       Ngôn ngữ: Tiếng Việt, trang trọng, khích lệ.
     `;
 
-    try {
-      // Sử dụng model gemini-1.5-flash để ổn định nhất
+    // Hàm gọi Gemini
+    const callGemini = async (key: string) => {
+      const ai = new GoogleGenAI({ apiKey: key });
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: [{ parts: [{ text: promptText }] }],
-        config: { 
-          responseMimeType: "application/json",
-          temperature: 0.7,
-        }
+        config: { responseMimeType: "application/json", temperature: 0.7 }
       });
+      return JSON.parse(response.text || "{}");
+    };
+
+    // Hàm gọi Groq
+    const callGroq = async (key: string) => {
+      const groq = new Groq({ apiKey: key, dangerouslyAllowBrowser: true });
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [{ role: "user", content: promptText }],
+        model: "llama-3.3-70b-versatile",
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+      });
+      return JSON.parse(chatCompletion.choices[0]?.message?.content || "{}");
+    };
+
+    try {
+      let parsed: any = {};
       
-      const text = response.text;
-      if (!text) throw new Error("Không nhận được phản hồi từ AI.");
-      
-      const parsed = JSON.parse(text);
+      // Nếu key bắt đầu bằng gsk_ thì dùng Groq ngay
+      if (apiKey.startsWith('gsk_')) {
+        parsed = await callGroq(apiKey);
+      } else {
+        try {
+          // Thử Gemini trước
+          parsed = await callGemini(apiKey);
+        } catch (geminiError) {
+          console.warn("Gemini failed, checking for Groq fallback...", geminiError);
+          // Nếu Gemini lỗi và có Groq key trong env thì thử Groq
+          if (process.env.GROQ_API_KEY) {
+            parsed = await callGroq(process.env.GROQ_API_KEY);
+          } else {
+            throw geminiError;
+          }
+        }
+      }
+
       return { 
         id: Date.now() + Math.random(), 
         studentName, 
@@ -214,8 +236,8 @@ export default function App() {
     } catch (e: any) {
       console.error("API Error:", e);
       let errorMsg = "Lỗi kết nối API.";
-      if (e.message?.includes("403")) errorMsg = "API Key không hợp lệ hoặc không có quyền truy cập.";
-      if (e.message?.includes("429")) errorMsg = "Quá giới hạn lượt gọi API. Vui lòng thử lại sau.";
+      if (e.message?.includes("403")) errorMsg = "API Key không hợp lệ hoặc hết hạn.";
+      if (e.message?.includes("429")) errorMsg = "Hệ thống đang bận (Quá tải). Vui lòng thử lại sau giây lát.";
       
       return { 
         id: Date.now() + Math.random(), 
@@ -223,7 +245,7 @@ export default function App() {
         level, 
         achievement: `[Lỗi] ${errorMsg}`, 
         limitation: "Vui lòng kiểm tra lại cấu hình API Key.", 
-        parentSupport: "Đảm bảo bạn đang sử dụng Gemini API Key hợp lệ." 
+        parentSupport: "Đảm bảo kết nối mạng ổn định." 
       };
     }
   };
@@ -369,7 +391,7 @@ export default function App() {
                       type="password" 
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="Nhập API Key của bạn (Tùy chọn)..."
+                      placeholder="Nhập Gemini Key (AIza...) hoặc Groq Key (gsk_)..."
                       disabled={isKeySaved}
                       className={`flex-1 px-4 py-2 rounded-xl border-2 outline-none transition-all text-sm ${
                         darkMode ? 'bg-slate-800 border-slate-700 focus:border-blue-500' : 'bg-white border-slate-200 focus:border-blue-500'
@@ -400,10 +422,10 @@ export default function App() {
                 </div>
                 {showKeyGuide && (
                   <div className={`mt-4 p-4 rounded-xl text-xs leading-relaxed ${darkMode ? 'bg-slate-900 text-slate-400' : 'bg-blue-50 text-blue-800'}`}>
-                    <p className="font-bold mb-2">💡 Lưu ý quan trọng:</p>
+                    <p className="font-bold mb-2">💡 Hỗ trợ đa nền tảng:</p>
                     <ul className="list-disc ml-4 space-y-1">
-                      <li>Hệ thống đã tích hợp sẵn luồng chạy ngầm, bạn có thể sử dụng ngay mà không cần nhập Key.</li>
-                      <li>Nếu bạn muốn sử dụng Key riêng (Groq/Gemini), hãy dán vào ô trên và nhấn "Lưu Key".</li>
+                      <li>Hệ thống ưu tiên sử dụng <b>Gemini API</b> (Model: Gemini 3 Flash).</li>
+                      <li>Nếu Gemini gặp lỗi hoặc bạn nhập <b>Groq Key</b> (bắt đầu bằng <code>gsk_</code>), hệ thống sẽ tự động chuyển sang Groq (Model: Llama 3.3 70B).</li>
                       <li>Key của bạn được bảo mật và chỉ lưu trữ cục bộ trên trình duyệt này.</li>
                     </ul>
                   </div>
