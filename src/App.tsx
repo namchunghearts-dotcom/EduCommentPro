@@ -43,6 +43,28 @@ export default function App() {
   const [isKeySaved, setIsKeySaved] = useState(false);
   const [showKeyGuide, setShowKeyGuide] = useState(false);
   
+  // Load API Key từ localStorage khi khởi tạo
+  useEffect(() => {
+    const savedKey = localStorage.getItem('educomment_api_key');
+    if (savedKey) {
+      setApiKeyInput(savedKey);
+      setIsKeySaved(true);
+    }
+  }, []);
+
+  const saveApiKey = () => {
+    if (apiKeyInput.trim()) {
+      localStorage.setItem('educomment_api_key', apiKeyInput.trim());
+      setIsKeySaved(true);
+    }
+  };
+
+  const deleteApiKey = () => {
+    localStorage.removeItem('educomment_api_key');
+    setApiKeyInput("");
+    setIsKeySaved(false);
+  };
+  
   const [studentNames, setStudentNames] = useState("");
   const [yccd, setYccd] = useState("");
   const [grade, setGrade] = useState("Lớp 1");
@@ -142,6 +164,11 @@ export default function App() {
       throw new Error("Thiếu API Key. Vui lòng nhập API Key ở ô 'API Configuration' phía trên hoặc thiết lập trong Secrets panel.");
     }
 
+    // Kiểm tra nhanh định dạng key để cảnh báo người dùng
+    if (apiKey.startsWith('gsk_')) {
+      throw new Error("Có vẻ bạn đang nhập Groq API Key. Ứng dụng này hiện đang sử dụng Gemini SDK, vui lòng nhập Gemini API Key (bắt đầu bằng 'AIza...').");
+    }
+
     const ai = new GoogleGenAI({ apiKey });
     const noteInstruction = note ? `\nGHI CHÚ ĐẶC BIỆT TỪ GIÁO VIÊN: "${note}". Hãy lồng ghép ý này vào nhận xét.` : '';
 
@@ -162,33 +189,41 @@ export default function App() {
     `;
 
     try {
+      // Sử dụng model gemini-1.5-flash để ổn định nhất
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text: promptText }] }],
-        config: { responseMimeType: "application/json" }
+        model: "gemini-1.5-flash",
+        contents: [{ parts: [{ text: promptText }] }],
+        config: { 
+          responseMimeType: "application/json",
+          temperature: 0.7,
+        }
       });
       
       const text = response.text;
-      if (!text) throw new Error("No response from AI");
+      if (!text) throw new Error("Không nhận được phản hồi từ AI.");
       
       const parsed = JSON.parse(text);
       return { 
         id: Date.now() + Math.random(), 
         studentName, 
         level, 
-        achievement: parsed.achievement, 
-        limitation: parsed.limitation, 
-        parentSupport: parsed.parentSupport 
+        achievement: parsed.achievement || "Chưa có nội dung thành tích.", 
+        limitation: parsed.limitation || "Chưa có nội dung hạn chế.", 
+        parentSupport: parsed.parentSupport || "Chưa có lời khuyên phụ huynh." 
       };
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error("API Error:", e);
+      let errorMsg = "Lỗi kết nối API.";
+      if (e.message?.includes("403")) errorMsg = "API Key không hợp lệ hoặc không có quyền truy cập.";
+      if (e.message?.includes("429")) errorMsg = "Quá giới hạn lượt gọi API. Vui lòng thử lại sau.";
+      
       return { 
         id: Date.now() + Math.random(), 
         studentName, 
         level, 
-        achievement: "Lỗi kết nối AI. Vui lòng kiểm tra lại API Key.", 
-        limitation: "Không thể tạo nội dung.", 
-        parentSupport: "Thử lại sau ít phút." 
+        achievement: `[Lỗi] ${errorMsg}`, 
+        limitation: "Vui lòng kiểm tra lại cấu hình API Key.", 
+        parentSupport: "Đảm bảo bạn đang sử dụng Gemini API Key hợp lệ." 
       };
     }
   };
@@ -342,14 +377,14 @@ export default function App() {
                     />
                     {!isKeySaved ? (
                       <button 
-                        onClick={() => { if(apiKeyInput) setIsKeySaved(true); }}
+                        onClick={saveApiKey}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20"
                       >
                         Lưu Key
                       </button>
                     ) : (
                       <button 
-                        onClick={() => { setIsKeySaved(false); setApiKeyInput(""); }}
+                        onClick={deleteApiKey}
                         className="px-4 py-2 bg-red-100 text-red-600 hover:bg-red-200 text-sm font-bold rounded-xl transition-all"
                       >
                         Xóa
