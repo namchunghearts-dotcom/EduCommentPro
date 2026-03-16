@@ -175,9 +175,10 @@ export default function App() {
       ${noteInstruction}
 
       QUY TẮC XƯNG HÔ & NỘI DUNG (TUYỆT ĐỐI TUÂN THỦ):
-      1. XƯNG HÔ: Chỉ sử dụng đại từ "Em" để gọi học sinh. 
-      2. KHÔNG DÙNG TÊN: TUYỆT ĐỐI KHÔNG ghi tên học sinh (ví dụ: "Nguyễn Văn A", "An", "Bình",...) trong nội dung nhận xét. Thay tất cả bằng "Em".
-      3. PHÂN BIỆT MỨC ĐỘ:
+      1. XƯNG HÔ: Chỉ sử dụng đại từ "em" để gọi học sinh. 
+      2. KHÔNG DÙNG TÊN: TUYỆT ĐỐI KHÔNG ghi tên học sinh (ví dụ: "Nguyễn Văn A", "An", "Bình",...) trong nội dung nhận xét. Thay tất cả bằng "em".
+      3. CHÍNH TẢ: Tuân thủ quy tắc viết hoa tiếng Việt. Từ "em" chỉ viết hoa khi đứng đầu câu. Tuyệt đối không viết hoa từ "em" khi ở giữa câu.
+      4. PHÂN BIỆT MỨC ĐỘ:
          - Nếu mức độ là "Hoàn thành tốt": Sử dụng các từ ngữ khen ngợi như "tốt", "xuất sắc", "thông minh", "nổi bật".
          - Nếu mức độ là "Hoàn thành": Chỉ nhận xét là em đã đạt được YCCĐ, nắm vững kiến thức cơ bản. TUYỆT ĐỐI KHÔNG dùng từ "tốt", "giỏi" hay "xuất sắc". Hãy dùng các từ như "đạt yêu cầu", "có cố gắng", "nắm được bài".
          - Nếu mức độ là "Chưa hoàn thành": Tập trung vào việc em cần cố gắng hơn, chỉ ra các lỗ hổng kiến thức một cách nhẹ nhàng nhưng rõ ràng. TUYỆT ĐỐI KHÔNG dùng từ ngữ tích cực quá mức.
@@ -235,22 +236,33 @@ export default function App() {
         }
       }
 
-      // Hậu xử lý: Đảm bảo không có tên học sinh trong nhận xét
+      // Hậu xử lý: Đảm bảo không có tên học sinh trong nhận xét và đúng chính tả
       const cleanText = (text: string) => {
         if (!text) return "";
         let cleaned = text;
-        // Thay thế tên học sinh (nếu AI lỡ ghi vào) bằng "Em"
+        
+        // 1. Thay thế tên học sinh (nếu AI lỡ ghi vào) bằng "em" (viết thường)
         const nameParts = studentName.split(' ').filter(p => p.length > 0);
-        nameParts.forEach(part => {
+        // Sắp xếp tên dài trước để tránh thay thế nhầm
+        const sortedParts = [...nameParts].sort((a, b) => b.length - a.length);
+        
+        sortedParts.forEach(part => {
           const regex = new RegExp(`\\b${part}\\b`, 'gi');
-          cleaned = cleaned.replace(regex, 'Em');
+          cleaned = cleaned.replace(regex, 'em');
         });
-        // Thay thế các cụm từ xưng hô đầy đủ nếu có
-        cleaned = cleaned.replace(new RegExp(studentName, 'gi'), 'Em');
-        // Viết hoa chữ cái đầu nếu cần
-        cleaned = cleaned.replace(/Em em/g, 'Em');
-        cleaned = cleaned.trim();
-        return cleaned;
+        
+        // Thay thế cả cụm tên đầy đủ nếu còn
+        cleaned = cleaned.replace(new RegExp(studentName, 'gi'), 'em');
+
+        // 2. Xử lý các trường hợp lặp từ do thay thế
+        cleaned = cleaned.replace(/\bem em\b/gi, 'em');
+
+        // 3. Sửa lỗi viết hoa đầu câu và sau dấu chấm
+        cleaned = cleaned.replace(/(^|[.!?]\s+)([a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ])/g, (match, p1, p2) => {
+          return p1 + p2.toUpperCase();
+        });
+
+        return cleaned.trim();
       };
 
       return { 
