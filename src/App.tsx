@@ -137,11 +137,22 @@ export default function App() {
         }
         cols.push(current.trim().replace(/^"|"$/g, ''));
 
-        if (cols.length >= 1 && cols[0]) {
+        // Kiểm tra nếu cột đầu là số (STT) thì bỏ qua lấy cột tiếp theo làm tên
+        let name = cols[0];
+        let level = cols[1];
+        let note = cols[2];
+
+        if (name && !isNaN(Number(name)) && cols.length > 1) {
+          name = cols[1];
+          level = cols[2];
+          note = cols[3];
+        }
+
+        if (name && isNaN(Number(name))) {
           parsedData.push({
-            name: cols[0],
-            level: cols[1] || 'Hoàn thành',
-            note: cols[2] || ''
+            name: name,
+            level: level || 'Hoàn thành',
+            note: note || ''
           });
         }
       }
@@ -164,7 +175,8 @@ export default function App() {
       throw new Error("Hệ thống chưa sẵn sàng. Vui lòng nhập API Key (Gemini hoặc Groq) ở ô 'API Configuration' hoặc kiểm tra lại Secrets panel.");
     }
 
-    const noteInstruction = note ? `\nGHI CHÚ ĐẶC BIỆT TỪ GIÁO VIÊN: "${note}". Hãy lồng ghép ý này vào nhận xét.` : '';
+    const noteInstruction = note ? `\nGHI CHÚ CÁ NHÂN HÓA TỪ GIÁO VIÊN: "${note}". 
+      YÊU CẦU: Đây là thông tin quan trọng nhất để cá nhân hóa. Hãy lồng ghép ý này một cách khéo léo và sâu sắc vào cả 3 phần (Thành tích, Hạn chế, Phụ huynh) nếu phù hợp. Không chỉ lặp lại nguyên văn mà hãy diễn đạt lại theo ngôn ngữ sư phạm.` : '';
     
     // Tinh chỉnh prompt để bám sát mức độ và xưng hô
     const promptText = `
@@ -176,20 +188,21 @@ export default function App() {
 
       QUY TẮC XƯNG HÔ & NỘI DUNG (TUYỆT ĐỐI TUÂN THỦ):
       1. XƯNG HÔ: Chỉ sử dụng đại từ "em" để gọi học sinh. 
-      2. KHÔNG DÙNG TÊN: TUYỆT ĐỐI KHÔNG ghi tên học sinh (ví dụ: "Nguyễn Văn A", "An", "Bình",...) trong nội dung nhận xét. Thay tất cả bằng "em".
-      3. CHÍNH TẢ: Tuân thủ quy tắc viết hoa tiếng Việt. Từ "em" chỉ viết hoa khi đứng đầu câu. Tuyệt đối không viết hoa từ "em" khi ở giữa câu.
-      4. PHÂN BIỆT MỨC ĐỘ:
-         - Nếu mức độ là "Hoàn thành tốt": Sử dụng các từ ngữ khen ngợi như "tốt", "xuất sắc", "thông minh", "nổi bật".
-         - Nếu mức độ là "Hoàn thành": Chỉ nhận xét là em đã đạt được YCCĐ, nắm vững kiến thức cơ bản. TUYỆT ĐỐI KHÔNG dùng từ "tốt", "giỏi" hay "xuất sắc". Hãy dùng các từ như "đạt yêu cầu", "có cố gắng", "nắm được bài".
-         - Nếu mức độ là "Chưa hoàn thành": Tập trung vào việc em cần cố gắng hơn, chỉ ra các lỗ hổng kiến thức một cách nhẹ nhàng nhưng rõ ràng. TUYỆT ĐỐI KHÔNG dùng từ ngữ tích cực quá mức.
-      4. CẤU TRÚC TRẢ VỀ: JSON với 3 trường: "achievement", "limitation", "parentSupport".
+      2. KHÔNG DÙNG TÊN: TUYỆT ĐỐI KHÔNG ghi tên học sinh trong nội dung nhận xét. Thay tất cả bằng "em".
+      3. CHÍNH TẢ: Viết hoa từ "em" ở đầu câu, viết thường ở giữa câu.
+      4. TÍNH CÁ NHÂN HÓA: Tránh các câu mẫu sáo rỗng, trùng lặp. Mỗi lời nhận xét phải mang nét riêng biệt dựa trên mức độ và ghi chú của giáo viên.
+      5. KIỂM SOÁT TÔNG GIỌNG (RẤT QUAN TRỌNG):
+         - Nếu mức độ là "Hoàn thành tốt": Khen ngợi đúng mực, chân thực. HẠN CHẾ tối đa từ "xuất sắc" trừ khi ghi chú của giáo viên thực sự thể hiện điều đó. Hãy dùng các từ như "nổi bật", "tự tin", "nắm vững", "có năng khiếu". Không nói quá năng lực của học sinh.
+         - Nếu mức độ là "Hoàn thành": Nhận xét khách quan về việc đạt YCCĐ. Dùng từ như "đạt yêu cầu", "có tiến bộ", "cần rèn luyện thêm để vững vàng hơn".
+         - Nếu mức độ là "Chưa hoàn thành": Nhận xét nhẹ nhàng, mang tính xây dựng, chỉ rõ điểm cần cố gắng.
+      6. CẤU TRÚC TRẢ VỀ: JSON với 3 trường: "achievement", "limitation", "parentSupport".
 
       YÊU CẦU CHI TIẾT THEO THÔNG TƯ 27:
-      - Thành tích: Nhận xét sự hình thành năng lực, phẩm chất dựa trên YCCĐ.
-      - Hạn chế: Chỉ ra nội dung chưa đạt hoặc cần rèn luyện thêm.
-      - Lời khuyên: Hướng dẫn phụ huynh phối hợp.
+      - Thành tích: Nhận xét sự hình thành năng lực, phẩm chất dựa trên YCCĐ và ghi chú.
+      - Hạn chế: Chỉ ra nội dung chưa đạt hoặc cần rèn luyện thêm dựa trên thực tế của em.
+      - Lời khuyên: Hướng dẫn phụ huynh phối hợp cụ thể cho trường hợp của em.
 
-      Ngôn ngữ: Tiếng Việt, sư phạm, chuẩn xác theo mức độ.
+      Ngôn ngữ: Tiếng Việt, sư phạm, ấm áp, không trùng lặp giữa các học sinh.
     `;
 
     // Hàm gọi Gemini
